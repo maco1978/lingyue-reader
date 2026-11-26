@@ -7,7 +7,7 @@ import type { Book } from './types';
 
 /** 判断一条错误是否已经是我们给用户的人话，避免二次包装 */
 function isFriendlyError(e: unknown): boolean {
-  return e instanceof Error && /无法识别这本书的格式|无法打开|不支持/.test(e.message);
+  return e instanceof Error && /无法识别这本书的格式|无法打开|不支持|暂不开放/.test(e.message);
 }
 
 /**

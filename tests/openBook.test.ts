@@ -25,6 +25,15 @@ describe('openBook', () => {
     await expect(openBook('locked.azw3', new Uint8Array([0, 1, 2]))).rejects.toThrow();
   });
 
+  it('cbz 的人话错误原样透传，不被二次包装', async () => {
+    await expect(openBook('a.cbz', new Uint8Array([0x50, 0x4b, 0x03, 0x04]))).rejects.toThrow(
+      '漫画格式将在绘本模式支持',
+    );
+    let msg = '';
+    await openBook('a.cbz', new Uint8Array([0x50, 0x4b, 0x03, 0x04])).catch((e: Error) => (msg = e.message));
+    expect(msg).not.toContain('已损坏');
+  });
+
   it('损坏的 zip 不泄漏原始报错', async () => {
     await expect(openBook('坏书.epub', new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00]))).rejects.toThrow(
       '无法打开',
