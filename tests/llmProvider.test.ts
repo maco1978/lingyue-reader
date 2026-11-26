@@ -27,6 +27,17 @@ describe('OpenAIProvider', () => {
     const out = await p.chat([{ role: 'user', content: '起风在哪' }], [{ name: 'findInBook', description: '在书中定位原文', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } }]);
     expect(out.toolCalls?.[0].name).toBe('findInBook');
     expect(out.toolCalls?.[0].args).toEqual({ query: '起风' });
+    const body2 = JSON.parse(fn.mock.calls[0][1].body);
+    expect(body2.tools).toEqual([{ type: 'function', function: { name: 'findInBook', description: '在书中定位原文', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } }]);
+  });
+
+  it('tool arguments 非法 JSON 时容错：args 为 {} 且不抛错', async () => {
+    const fn = mockChat({ choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'findInBook', arguments: 'not-json' } }] }, finish_reason: 'tool_calls' }] });
+    const p = new OpenAIProvider('sk', 'https://api.deepseek.com', 'deepseek-chat', fn);
+    const out = await p.chat([{ role: 'user', content: '起风在哪' }]);
+    expect(out.toolCalls?.[0].id).toBe('call_1');
+    expect(out.toolCalls?.[0].name).toBe('findInBook');
+    expect(out.toolCalls?.[0].args).toEqual({});
   });
 
   it('API 报错时抛出人话错误（含状态码）', async () => {

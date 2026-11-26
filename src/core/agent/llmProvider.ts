@@ -17,14 +17,22 @@ export class OpenAIProvider implements LLMProvider {
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.apiKey },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error('模型调用失败（HTTP ' + res.status + '）：' + await res.text());
+    if (!res.ok) throw new Error('模型调用失败（HTTP ' + res.status + '）：' + (await res.text()).slice(0, 500));
     const data = await res.json() as any;
     const msg = data.choices?.[0]?.message ?? {};
-    const toolCalls: ToolCall[] | undefined = msg.tool_calls?.map((tc: any) => ({
-      id: tc.id,
-      name: tc.function?.name ?? '',
-      args: JSON.parse(tc.function?.arguments ?? '{}'),
-    }));
+    const toolCalls: ToolCall[] | undefined = msg.tool_calls?.map((tc: any) => {
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(tc.function?.arguments ?? '{}');
+      } catch {
+        // LLM 生成的参数不可信：截断/非法 JSON 时回退为空对象，让下游工具层因缺必填参数自然拒绝
+      }
+      return {
+        id: tc.id,
+        name: tc.function?.name ?? '',
+        args,
+      };
+    });
     return { content: msg.content ?? null, toolCalls };
   }
 }
