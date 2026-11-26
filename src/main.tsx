@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Reader } from './ui/Reader';
 import { AudioPlayer } from './ui/AudioPlayer';
@@ -39,7 +39,10 @@ function localStorageAdapter(): Storage {
   };
 }
 
-const store = bookStore(localStorageAdapter());
+/** 模块级单例适配器：阅读进度/划线（Reader 注入）与搭子/听书共享同一份 localStorage 书级状态 */
+const bookStoreStorage = localStorageAdapter();
+
+const store = bookStore(bookStoreStorage);
 const voices = voiceCards(localStorageAdapter());
 
 type View = 'reader' | 'listen' | 'voices' | 'chat';
@@ -82,7 +85,10 @@ function App() {
   }, [llmKeyDraft, llm]);
 
   const engine = apiKey ? new MossApiEngine(apiKey) : null;
-  const provider = llm.apiKey ? new OpenAIProvider(llm.apiKey, llm.baseUrl, llm.model) : null;
+  const provider = useMemo(
+    () => (llm.apiKey ? new OpenAIProvider(llm.apiKey, llm.baseUrl, llm.model) : null),
+    [llm.apiKey, llm.baseUrl, llm.model],
+  );
 
   const handleSaveCard = useCallback((card: VoiceCard) => {
     voices.save(card);
@@ -128,7 +134,7 @@ function App() {
           <button onClick={saveApiKey}>保存</button>
         </div>
       )}
-      {view === 'reader' && <Reader book={book} initialChapter={chatChapter} />}
+      {view === 'reader' && <Reader book={book} initialChapter={chatChapter} storage={bookStoreStorage} />}
       {view === 'listen' && engine && (
         <AudioPlayer
           book={book}

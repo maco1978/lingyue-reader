@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import type { Book } from '../core/types';
+import React, { useState, useMemo } from 'react';
+import type { Book, Storage } from '../core/types';
 import { bookStore, memoryStorage } from '../core/bookStore';
 import { makeAnchor } from '../core/anchors';
 
-const store = bookStore(memoryStorage());
-
-export function Reader({ book, initialChapter = 0 }: { book: Book; initialChapter?: number }) {
+export function Reader({ book, initialChapter = 0, storage }: { book: Book; initialChapter?: number; storage?: Storage }) {
+  // 书级状态（进度/划线）走注入的 storage；默认 memoryStorage 保持既有测试与行为不变。
+  // main 传入 localStorageAdapter()，让阅读进度与搭子/听书共享同一份书级状态。
+  const store = useMemo(() => bookStore(storage ?? memoryStorage()), [storage]);
   const [index, setIndex] = useState(initialChapter);
   const chapter = book.spine[index];
 

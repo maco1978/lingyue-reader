@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { Book, Annotation } from '../core/types';
 import type { LLMProvider } from '../core/agent/types';
 import { runAgent } from '../core/agent/agent';
@@ -27,12 +27,19 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   async function send() {
     const question = input.trim();
     if (!question || loading) return;
     const history = [...messages, { role: 'user' as const, content: question }];
     setMessages(history);
+    // 用户问题即时持久化：报错或中途切视图都不丢提问
+    onPersist?.(history.map(({ role, content }) => ({ role, content })));
     setInput('');
     setLoading(true);
     setError('');
@@ -45,6 +52,7 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
         chatHistory: messages,
         question,
       });
+      if (!mountedRef.current) return;
       const reply = output.answer || '（模型没有返回内容）';
       const next: ChatMsg[] = [
         ...history,
@@ -53,9 +61,11 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
       setMessages(next);
       onPersist?.(next.map(({ role, content }) => ({ role, content })));
     } catch (e) {
+      if (!mountedRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
+      // 失败时用户问题已在上面持久化，无需重复写
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }
 
