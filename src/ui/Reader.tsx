@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Book } from '../core/types';
 import { bookStore, memoryStorage } from '../core/bookStore';
+import { makeAnchor } from '../core/anchors';
 
 const store = bookStore(memoryStorage());
 
@@ -13,7 +14,7 @@ export function Reader({ book }: { book: Book }) {
     store.saveProgress(book.meta.id, {
       bookId: book.meta.id,
       chapterIndex: next,
-      anchor: 'chapter:' + next,
+      anchor: makeAnchor(next, 0),
       updatedAt: Date.now(),
     });
   }
