@@ -11,6 +11,7 @@ import { MossApiEngine } from './core/tts/mossApiEngine';
 import { OpenAIProvider } from './core/agent/llmProvider';
 import type { Book, Storage } from './core/types';
 import type { VoiceCard } from './core/tts/types';
+import { collectBookData, applyBookData } from './ui/backup';
 
 const API_KEY_STORAGE = 'lingyue:moss-api-key';
 const LLM_CONFIG_STORAGE = 'lingyue:llm-config';
@@ -99,6 +100,26 @@ function App() {
     setCards(voices.list());
   }, []);
 
+  const handleBackupExport = useCallback(() => {
+    const entries = Object.keys(window.localStorage).map(k => [k, window.localStorage.getItem(k)!] as [string, string]);
+    const blob = new Blob([JSON.stringify(collectBookData(Object.fromEntries(entries)), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'lingyue-backup.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, []);
+
+  const handleBackupImport = useCallback(async (file: File) => {
+    try {
+      const data = JSON.parse(await file.text()) as Record<string, string>;
+      applyBookData(data, (k, v) => window.localStorage.setItem(k, v));
+      alert('已导入，请刷新');
+    } catch (e) {
+      alert('导入失败：' + (e instanceof Error ? e.message : String(e)));
+    }
+  }, []);
+
   const handleJump = useCallback((chapterIndex: number) => {
     setChatChapter(chapterIndex);
     setView('reader');
@@ -121,6 +142,22 @@ function App() {
         <button onClick={() => setView('listen')}>听书</button>
         <button onClick={() => setView('voices')}>音色管理</button>
         <button onClick={() => setView('chat')}>搭子</button>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button onClick={handleBackupExport}>备份导出</button>
+          <label style={{ cursor: 'pointer' }}>
+            备份导入
+            <input
+              type="file"
+              accept="application/json"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) void handleBackupImport(f);
+                e.target.value = '';
+              }}
+            />
+          </label>
+        </span>
       </nav>
       {!apiKey && (
         <div style={{ padding: 8, background: '#fff8e1' }}>
