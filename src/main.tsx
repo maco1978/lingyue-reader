@@ -59,13 +59,17 @@ function App() {
   const [llmKeyDraft, setLlmKeyDraft] = useState('');
   const [chatChapter, setChatChapter] = useState(0);
 
-  useEffect(() => {
-    // 真实文件入口：把用户选择的 File 读成 Uint8Array 传给 openBook(fileName, bytes)
-    // const buf = new Uint8Array(await file.arrayBuffer());
-    // openBook(file.name, buf).then(setBook).catch(e => setError(String(e)));
-    // 以下为内置 TXT 示例，演示完整链路（阅读与听书共用）
-    const demo = new TextEncoder().encode('第一章 起风\n他站在门口，风把纸片吹起来。\n第二章 下雨\n雨下了起来。');
-    openBook('示例.txt', demo).then(setBook).catch(e => setError(e instanceof Error ? e.message : String(e)));
+  /** 导入真实电子书：File → bytes → openBook（格式分诊） */
+  const handleImportBook = useCallback(async (file: File) => {
+    setError('');
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const loaded = await openBook(file.name, buf);
+      setBook(loaded);
+      setView('reader');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }, []);
 
   const saveApiKey = useCallback(() => {
@@ -130,8 +134,23 @@ function App() {
     store.saveState(book.meta.id, { ...store.loadState(book.meta.id), chatHistory: messages });
   }, [book]);
 
+  if (!book) return (
+    <div style={{ fontFamily: 'system-ui', maxWidth: 520, margin: '60px auto', padding: 16, textAlign: 'center' }}>
+      <h2>聆阅看书</h2>
+      <p>导入一本电子书开始阅读（支持 EPUB / MOBI / AZW3 / TXT / FB2）</p>
+      <label style={{ display: 'inline-block', padding: '10px 20px', background: '#4a90d9', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+        导入图书
+        <input
+          type="file"
+          accept=".epub,.mobi,.azw3,.txt,.fb2,.pdf"
+          style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; if (f) void handleImportBook(f); e.target.value = ''; }}
+        />
+      </label>
+      {error && <div role="alert" style={{ color: '#c00', marginTop: 16 }}>{error}</div>}
+    </div>
+  );
   if (error) return <div role="alert">{error}</div>;
-  if (!book) return <div>正在打开…</div>;
 
   const chatHistory = store.loadState(book.meta.id).chatHistory;
 
@@ -142,6 +161,15 @@ function App() {
         <button onClick={() => setView('listen')}>听书</button>
         <button onClick={() => setView('voices')}>音色管理</button>
         <button onClick={() => setView('chat')}>搭子</button>
+        <label style={{ cursor: 'pointer' }}>
+          导入图书
+          <input
+            type="file"
+            accept=".epub,.mobi,.azw3,.txt,.fb2,.pdf"
+            style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) void handleImportBook(f); e.target.value = ''; }}
+          />
+        </label>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={handleBackupExport}>备份导出</button>
           <label style={{ cursor: 'pointer' }}>
