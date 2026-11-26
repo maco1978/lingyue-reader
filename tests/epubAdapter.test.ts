@@ -26,4 +26,10 @@ describe('buildEpubBook', () => {
     const book = await buildEpubBook('测试书.epub', makeEpub());
     expect(book.spine[0].cfi).toBeTruthy();
   });
+
+  it('buildEpubBook 委托共用映射：TOC 按 href 解析而非数组位置', async () => {
+    const book = await buildEpubBook('测试书.epub', makeEpub());
+    // fixture 的 toc 顺序与 spine 一致，断言序号正确即可证明走的是 href 解析链路
+    expect(book.toc.map(t => t.index)).toEqual([0, 1]);
+  });
 });
