@@ -1,7 +1,7 @@
 import type { TTSEngine, SynthRequest } from './types';
 
 const DEFAULT_BASE = 'https://api.mosi.cn';
-const DEFAULT_MODEL = 'moss-tts-1.5-flash';
+const DEFAULT_MODEL = 'moss-tts-2.0-flash-preview';
 
 /** 官方要求英文全称，常见代码归一化；其它原样透传。 */
 const LANGUAGE_MAP: Record<string, string> = {

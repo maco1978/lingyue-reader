@@ -16,7 +16,7 @@ const API_KEY_STORAGE = 'lingyue:moss-api-key';
 const LLM_CONFIG_STORAGE = 'lingyue:llm-config';
 
 /** Hy4 Flash 默认值（OpenAI 兼容）；API Key 必须用户自填，永不硬编码 */
-const DEFAULT_LLM = { baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1', model: 'hy4-flash' };
+const DEFAULT_LLM = { baseUrl: 'https://tokenhub.tencentmaas.com/v1', model: 'hy4-flash' };
 
 interface LlmConfig { baseUrl: string; model: string; apiKey: string }
 
