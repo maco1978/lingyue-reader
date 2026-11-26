@@ -89,6 +89,10 @@ function App() {
           book={book}
           engine={engine}
           cards={cards}
+          initialChapter={Math.max(0, Math.min(
+            store.loadState(book.meta.id).audioPosition?.chapterIndex ?? 0,
+            book.spine.length - 1,
+          ))}
           onPosition={pos => store.saveState(book.meta.id, {
             ...store.loadState(book.meta.id),
             audioPosition: pos,

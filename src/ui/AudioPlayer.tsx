@@ -30,11 +30,13 @@ interface Props {
   engine: TTSEngine;
   cards: VoiceCard[];
   onPosition: (pos: { chapterIndex: number; anchor: string }) => void;
+  /** 断点续听：初次挂载时从中断的章节开始（后续变化不响应） */
+  initialChapter?: number;
 }
 
 /** 听书播放器：逐段合成 → 连播；渲染阶段不触碰 Audio / URL.createObjectURL 等浏览器 API */
-export function AudioPlayer({ book, engine, cards, onPosition }: Props) {
-  const [currentChapter, setCurrentChapter] = useState(0);
+export function AudioPlayer({ book, engine, cards, onPosition, initialChapter }: Props) {
+  const [currentChapter, setCurrentChapter] = useState(initialChapter ?? 0);
   const [playing, setPlaying] = useState(false);
   const [voiceId, setVoiceId] = useState('');
   const [status, setStatus] = useState('');
@@ -105,11 +107,14 @@ export function AudioPlayer({ book, engine, cards, onPosition }: Props) {
       <ol>
         {book.spine.map(ch => (
           <li key={ch.index}>
-            <button onClick={() => {
-              stop();
-              setCurrentChapter(ch.index);
-              onPosition({ chapterIndex: ch.index, anchor: makeAnchor(ch.index, 0) });
-            }}>{ch.title}</button>
+            <button
+              aria-current={ch.index === currentChapter || undefined}
+              onClick={() => {
+                stop();
+                setCurrentChapter(ch.index);
+                onPosition({ chapterIndex: ch.index, anchor: makeAnchor(ch.index, 0) });
+              }}
+            >{ch.title}</button>
           </li>
         ))}
       </ol>

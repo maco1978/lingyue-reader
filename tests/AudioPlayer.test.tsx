@@ -39,4 +39,34 @@ describe('AudioPlayer', () => {
       (globalThis as Record<string, unknown>).URL = origURL;
     }
   });
+
+  it('initialChapter 用于初始化当前章节（断点续听）', () => {
+    const book = {
+      meta: { id: 'b1', title: '测试书', author: '', format: 'txt' as const, presentation: 'reflowed' as const },
+      spine: [
+        { index: 0, title: '第一章', html: '正文一' },
+        { index: 1, title: '第二章', html: '正文二' },
+      ],
+      toc: [],
+    };
+    const html = renderToStaticMarkup(
+      <AudioPlayer
+        book={book}
+        engine={{ createVoice: vi.fn(), synthesize: vi.fn() }}
+        cards={[]}
+        onPosition={vi.fn()}
+        initialChapter={1}
+      />
+    );
+    // aria-current 应落在第二章按钮的开标签上（其文本「第二章」紧随其后），而非默认的第 0 章
+    expect(html).toContain('aria-current="true"');
+    const currentPos = html.indexOf('aria-current="true"');
+    const markPos = html.indexOf('第二章', currentPos);
+    // aria-current 之后最近的一个「第二章」必须是该按钮自身的文本（同标签内），且第一章按钮不含 aria-current
+    expect(markPos).toBeGreaterThan(-1);
+    expect(html.slice(0, currentPos)).not.toContain('第二章');
+    expect(html.slice(0, currentPos)).toContain('第一章');
+    // aria-current 与「第二章」在同一个开标签内（中间不得出现闭合标签）
+    expect(html.slice(currentPos, markPos)).not.toContain('</button>');
+  });
 });
