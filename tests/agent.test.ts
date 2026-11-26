@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { runAgent } from '../src/core/agent/agent';
+import { findInBook } from '../src/core/agent/tools';
 import type { Book } from '../src/core/types';
 
 beforeAll(() => {
@@ -28,8 +29,24 @@ describe('runAgent', () => {
     });
     expect(result.answer).toContain('第一段');
     expect(chat).toHaveBeenCalledTimes(2);
+
+    // 协议正确性：先回显模型那次「请求工具」的 assistant 消息（含 tool_calls 数组），
+    // 再紧跟对应 tool_call_id 的 role:'tool' 消息；assistant 消息上不允许出现 tool_call_id。
     const secondMessages = chat.mock.calls[1][0];
-    expect(secondMessages.some((m: any) => m.role === 'tool' && m.content.includes('纸片'))).toBe(true);
+    const assistantIdx = secondMessages.findIndex((m: any) => m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0);
+    expect(assistantIdx).toBeGreaterThanOrEqual(0);
+    const assistantMsg = secondMessages[assistantIdx];
+    expect(assistantMsg.tool_calls[0].id).toBe('c1');
+    expect(assistantMsg.tool_calls[0].type).toBe('function');
+    expect(assistantMsg.tool_calls[0].function.name).toBe('findInBook');
+    expect(JSON.parse(assistantMsg.tool_calls[0].function.arguments)).toEqual({ query: '纸片' });
+    expect(assistantMsg.tool_call_id).toBeUndefined();
+
+    const toolMsg = secondMessages[assistantIdx + 1];
+    expect(toolMsg.role).toBe('tool');
+    expect(toolMsg.tool_call_id).toBe('c1');
+    expect(toolMsg.content.includes('纸片')).toBe(true);
+    expect(secondMessages.some((m: any) => m.role === 'assistant' && m.tool_call_id !== undefined)).toBe(false);
   });
 
   it('无工具请求时直接返回回答', async () => {
@@ -37,5 +54,9 @@ describe('runAgent', () => {
     const result = await runAgent({ provider: { chat } as any, book, chapterIndex: 0, annotations: [], chatHistory: [], question: '总结' });
     expect(result.answer).toBe('这是总结。');
     expect(chat).toHaveBeenCalledTimes(1);
+  });
+
+  it('空 query 不误命中第一章', async () => {
+    expect(findInBook(book, '   ')).toContain('未在书中找到');
   });
 });

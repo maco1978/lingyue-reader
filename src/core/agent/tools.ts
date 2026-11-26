@@ -2,15 +2,34 @@ import type { Book } from '../types';
 import type { ToolSpec } from './types';
 import { chunkChapter } from '../tts/chunker';
 
-/** 在书中定位一句话，返回章节与原文片段 */
-export function findInBook(book: Book, query: string): string {
+export interface LocateResult {
+  chapterIndex: number;
+  snippet: string;
+}
+
+/** 在书中定位一句话，返回章节序号与上下文原文片段；找不到或 query 为空白时返回 null */
+export function locate(book: Book, query: string): LocateResult | null {
+  if (!query.trim()) return null;
   for (const ch of book.spine) {
     const text = chunkChapter(ch.html, 100000).join('');
     const idx = text.indexOf(query);
     if (idx >= 0) {
       const from = Math.max(0, idx - 30);
-      return '《' + book.meta.title + '》' + ch.title + '：…' + text.slice(from, idx + query.length + 30) + '…（章节序号 ' + ch.index + '）';
+      return {
+        chapterIndex: ch.index,
+        snippet: text.slice(from, idx + query.length + 30),
+      };
     }
+  }
+  return null;
+}
+
+/** 在书中定位一句话，返回章节与原文片段（面向模型的友好文本） */
+export function findInBook(book: Book, query: string): string {
+  const hit = locate(book, query);
+  if (hit) {
+    const ch = book.spine.find(c => c.index === hit.chapterIndex);
+    return '《' + book.meta.title + '》' + (ch?.title ?? '') + '：…' + hit.snippet + '…（章节序号 ' + hit.chapterIndex + '）';
   }
   return '未在书中找到「' + query + '」';
 }

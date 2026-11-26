@@ -1,7 +1,7 @@
 import type { Book, Annotation } from '../types';
-import type { LLMProvider, ChatMessage } from './types';
+import type { LLMProvider } from './types';
 import { buildContext } from './context';
-import { AGENT_TOOLS, findInBook } from './tools';
+import { AGENT_TOOLS, findInBook, locate } from './tools';
 
 interface AgentInput {
   provider: LLMProvider;
@@ -14,7 +14,7 @@ interface AgentInput {
 
 export interface AgentOutput {
   answer: string;
-  /** 工具命中的章节序号，供 UI 显示「原文出处」按钮 */
+  /** 工具命中的章节序号，供 UI 显示「原文出处」按钮；多次命中取最后一次成功 */
   sourceChapter?: number;
 }
 
@@ -24,17 +24,28 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
   const first = await input.provider.chat(messages, AGENT_TOOLS);
   if (!first.toolCalls?.length) return { answer: first.content ?? '' };
 
+  // OpenAI 兼容回灌协议：先把模型请求工具的那条 assistant 消息原样回显（含 tool_calls 数组），再逐个跟 role:'tool' 结果
+  messages.push({
+    role: 'assistant',
+    content: first.content ?? '',
+    tool_calls: first.toolCalls.map(c => ({
+      id: c.id,
+      type: 'function' as const,
+      function: { name: c.name, arguments: JSON.stringify(c.args) },
+    })),
+  });
+
   let sourceChapter: number | undefined;
   for (const call of first.toolCalls) {
     let result = '';
     if (call.name === 'findInBook') {
-      result = findInBook(input.book, String(call.args.query ?? ''));
-      const m = result.match(/章节序号 (\d+)/);
-      if (m) sourceChapter = Number(m[1]);
+      const query = String(call.args.query ?? '');
+      result = findInBook(input.book, query);
+      const hit = locate(input.book, query);
+      if (hit) sourceChapter = hit.chapterIndex;
     } else {
       result = '未知工具：' + call.name;
     }
-    messages.push({ role: 'assistant', content: first.content ?? '', tool_call_id: call.id });
     messages.push({ role: 'tool', content: result, tool_call_id: call.id });
   }
   if (sourceChapter !== undefined) {
