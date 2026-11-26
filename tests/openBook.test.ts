@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { makeEpub } from './fixtures/makeEpub';
-import { openBook } from '../src/core/openBook';
+import { openBook, FriendlyError, isFriendlyError, wrapOpenError } from '../src/core/openBook';
 
 beforeAll(() => {
   const dom = new JSDOM('');
@@ -32,6 +32,36 @@ describe('openBook', () => {
     let msg = '';
     await openBook('a.cbz', new Uint8Array([0x50, 0x4b, 0x03, 0x04])).catch((e: Error) => (msg = e.message));
     expect(msg).not.toContain('已损坏');
+  });
+
+  it('pdf 给出暂不开放的友好提示，而不是损坏书报错', async () => {
+    const bytes = new TextEncoder().encode('%PDF-1.4 fake pdf bytes');
+    let msg = '';
+    await openBook('a.pdf', bytes).catch((e: Error) => (msg = e.message));
+    expect(msg).toContain('PDF 格式暂不开放');
+    expect(msg).not.toContain('已损坏');
+  });
+
+  it('FriendlyError 结构化透传：cbz 原样抛出且能被 instanceof 识别', async () => {
+    let err: unknown;
+    await openBook('a.cbz', new Uint8Array([0x50, 0x4b, 0x03, 0x04])).catch(e => (err = e));
+    expect(err).toBeInstanceOf(FriendlyError);
+    expect((err as Error).message).toBe('漫画格式将在绘本模式支持，当前版本暂不开放');
+    expect(isFriendlyError(err)).toBe(true);
+    // 普通 Error 即使消息含「不支持」也不是 FriendlyError
+    expect(isFriendlyError(new Error('此格式不支持'))).toBe(false);
+  });
+
+  it('适配器普通 Error 消息含「不支持」仍被包装（消息字符串不能旁路）', async () => {
+    const wrapped = wrapOpenError('某书.fb2', new Error('此编码暂不支持'));
+    expect(wrapped.message).toContain('无法打开《某书.fb2》');
+    expect(wrapped.message).not.toContain('暂不支持');
+  });
+
+  it('损坏的 zip 保留 cause，方便诊断', async () => {
+    await expect(openBook('坏书.epub', new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00]))).rejects.toMatchObject({
+      cause: expect.any(Error),
+    });
   });
 
   it('损坏的 zip 不泄漏原始报错', async () => {
