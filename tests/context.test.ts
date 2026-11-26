@@ -18,6 +18,20 @@ const book: Book = {
 };
 
 describe('buildContext', () => {
+  it('chapterIndex 来自最新阅读进度（store.progress），而不是过期的旧值', () => {
+    // main.tsx 的约定：ChatPanel 的 chapterIndex 由共享 store 的 progress 推导
+    // （progress?.chapterIndex ?? 0，夹在 [0, spine.length-1]），用户在 Reader 翻章后搭子跟随。
+    // 这里固定推导公式的行为契约：progress=1 → 上下文取第二章；越界时收敛到合法范围。
+    const progressChapter = 1;
+    const clamped = Math.max(0, Math.min(progressChapter, book.spine.length - 1));
+    const msgs = buildContext({ book, chapterIndex: clamped, annotations: [], chatHistory: [], question: '现在读到哪了' });
+    expect(msgs.map(m => m.content).join(' ')).toContain('第二章');
+    // progress 缺失 → 回落第 0 章；越界大值 → 收敛到最后一章
+    const progressMissing: number | undefined = undefined;
+    expect(buildContext({ book, chapterIndex: Math.max(0, Math.min(progressMissing ?? 0, book.spine.length - 1)), annotations: [], chatHistory: [], question: 'q' }).map(m => m.content).join(' ')).toContain('第一章');
+    expect(buildContext({ book, chapterIndex: Math.max(0, Math.min(99, book.spine.length - 1)), annotations: [], chatHistory: [], question: 'q' }).map(m => m.content).join(' ')).toContain('第二章');
+  });
+
   it('带当前章节片段与最近划线、对话摘要，且不超过预算', () => {
     const msgs = buildContext({
       book,

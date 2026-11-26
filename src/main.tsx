@@ -156,6 +156,8 @@ function App() {
       )}
       {view === 'voices' && !engine && <div>请先配置 API Key</div>}
       {view === 'chat' && provider && (
+        // 搭子上下文跟随最新阅读进度（Reader goTo 写入共享 storage），而非仅 onJump 时的快照；
+        // 与 Reader.initialChapter 冲突时以 progress 为准
         <ChatPanel
           book={book}
           provider={provider}
@@ -163,7 +165,7 @@ function App() {
           onJump={handleJump}
           initialMessages={chatHistory}
           onPersist={handlePersistChat}
-          chapterIndex={chatChapter}
+          chapterIndex={Math.max(0, Math.min(store.loadState(book.meta.id).progress?.chapterIndex ?? 0, book.spine.length - 1))}
         />
       )}
       {view === 'chat' && !provider && (

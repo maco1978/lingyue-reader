@@ -48,9 +48,8 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
     }
     messages.push({ role: 'tool', content: result, tool_call_id: call.id });
   }
-  if (sourceChapter !== undefined) {
-    messages.push({ role: 'system', content: '（原文出处章节序号：' + sourceChapter + '）' });
-  }
+  // 不再在 tool 消息后插 system：部分 OpenAI 兼容服务要求 system 只能在首位（否则 400）；
+  // 章节序号已在 tool 返回文本里，UI 需要时用返回值 AgentOutput.sourceChapter。
   const final = await input.provider.chat(messages);
   return { answer: final.content ?? '', sourceChapter };
 }

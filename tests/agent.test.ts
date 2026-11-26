@@ -47,6 +47,14 @@ describe('runAgent', () => {
     expect(toolMsg.tool_call_id).toBe('c1');
     expect(toolMsg.content.includes('纸片')).toBe(true);
     expect(secondMessages.some((m: any) => m.role === 'assistant' && m.tool_call_id !== undefined)).toBe(false);
+
+    // 协议安全：部分 OpenAI 兼容服务要求 system 只能在首位；工具结果后不得再插 system 消息
+    // （章节序号已包含在 tool 返回文本里，UI 用返回值 AgentOutput.sourceChapter）
+    expect(secondMessages.filter((m: any) => m.role === 'system').length).toBe(1);
+    expect(secondMessages[0].role).toBe('system');
+
+    // sourceChapter 仍随结果返回供 UI「查看原文」
+    expect(result.sourceChapter).toBe(0);
   });
 
   it('无工具请求时直接返回回答', async () => {
