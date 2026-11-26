@@ -37,9 +37,9 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
 
   async function send(questionOverride?: string) {
     const text = (questionOverride ?? input).trim();
-    const q = quote.trim();
+    const q = questionOverride ? '' : quote.trim();
     const question = q
-      ? '针对划线句子「' + q + '」：' + text
+      ? '针对划线句子「' + q.slice(0, 200) + '」：' + text
       : text;
     if (!text || loading) return;
     const history = [...messages, { role: 'user' as const, content: question }];
@@ -98,7 +98,7 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
         {error && <div role="alert" style={{ color: '#b00' }}>{error}</div>}
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <button type="button" onClick={() => { setQuoteOpen(true); void send('请用 3-5 个要点总结当前章节'); }} disabled={loading}>总结本章</button>
+        <button type="button" onClick={() => { void send('请用 3-5 个要点总结当前章节'); }} disabled={loading}>总结本章</button>
         <button type="button" onClick={() => setQuoteOpen(o => !o)} aria-expanded={quoteOpen}>划线问答</button>
       </div>
       <div style={{ display: quoteOpen ? 'block' : 'none' }}>
