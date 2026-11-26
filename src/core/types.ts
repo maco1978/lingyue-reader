@@ -20,6 +20,8 @@ export interface Chapter {
   title: string;
   /** 章节正文（XHTML 片段或纯文本，由呈现方式决定） */
   html: string;
+  /** foliate 返回的真实 CFI 基址；重排/TXT 书没有此字段 */
+  cfi?: string;
 }
 
 /**
