@@ -1,5 +1,5 @@
 const CACHE = 'lingyue-v1';
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
+const SHELL = ['/lingyue-reader/', '/lingyue-reader/index.html', '/lingyue-reader/manifest.webmanifest', '/lingyue-reader/icon-192.png', '/lingyue-reader/icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -16,6 +16,6 @@ self.addEventListener('fetch', e => {
         e.waitUntil(caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {}));
       }
       return res;
-    }).catch(() => caches.match(e.request).then(r => r || caches.match('/index.html')))
+    }).catch(() => caches.match(e.request).then(r => r || caches.match('/lingyue-reader/index.html')))
   );
 });
