@@ -5,8 +5,8 @@ import { makeAnchor } from '../core/anchors';
 
 const store = bookStore(memoryStorage());
 
-export function Reader({ book }: { book: Book }) {
-  const [index, setIndex] = useState(0);
+export function Reader({ book, initialChapter = 0 }: { book: Book; initialChapter?: number }) {
+  const [index, setIndex] = useState(initialChapter);
   const chapter = book.spine[index];
 
   function goTo(next: number) {
