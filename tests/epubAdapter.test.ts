@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { JSDOM } from 'jsdom';
-import { makeEpub } from './fixtures/makeEpub';
+import { makeEpub, makeObfuscatedEpub } from './fixtures/makeEpub';
 import { buildEpubBook } from '../src/core/epubAdapter';
 
 beforeAll(() => {
@@ -31,5 +31,12 @@ describe('buildEpubBook', () => {
     const book = await buildEpubBook('测试书.epub', makeEpub());
     // fixture 的 toc 顺序与 spine 一致，断言序号正确即可证明走的是 href 解析链路
     expect(book.toc.map(t => t.index)).toEqual([0, 1]);
+  });
+
+  it('带 encryption.xml 字体混淆的 EPUB 能正常打开（不报已损坏）', async () => {
+    const book = await buildEpubBook('混淆书.epub', makeObfuscatedEpub());
+    expect(book.meta.title).toBe('混淆书');
+    expect(book.spine).toHaveLength(1);
+    expect(book.spine[0].html).toContain('他站在门口。');
   });
 });

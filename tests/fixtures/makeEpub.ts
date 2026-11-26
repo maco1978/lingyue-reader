@@ -20,3 +20,21 @@ export function makeEpub(): Uint8Array {
     'OEBPS/ch2.xhtml': strToU8(CH2),
   });
 }
+
+const OBFUSCATED_OPF = '<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>混淆书</dc:title><dc:creator>作者甲</dc:creator><dc:identifier id="uid">test-001</dc:identifier><dc:language>zh</dc:language></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/><item id="font" href="fonts/book.ttf" media-type="application/x-font-ttf"/></manifest><spine><itemref idref="c1"/></spine></package>';
+
+// idpf 2008 字体混淆（foliate epub.js:585 会用 sha1(unique-identifier 的文本) 算密钥）
+const ENCRYPTION = '<?xml version="1.0"?><encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:enc="http://www.w3.org/2001/04/xmlenc#"><enc:EncryptedData><enc:EncryptionMethod Algorithm="http://www.idpf.org/2008/embedding"/><enc:CipherData><enc:CipherReference URI="OEBPS/fonts/book.ttf"/></enc:CipherData></enc:EncryptedData></encryption>';
+
+/** 带 encryption.xml 字体混淆的 EPUB：验证 sha1 契约（string 进、Uint8Array 出） */
+export function makeObfuscatedEpub(): Uint8Array {
+  return zipSync({
+    'mimetype': strToU8('application/epub+zip'),
+    'META-INF/container.xml': strToU8(CONTAINER),
+    'META-INF/encryption.xml': strToU8(ENCRYPTION),
+    'OEBPS/content.opf': strToU8(OBFUSCATED_OPF),
+    'OEBPS/nav.xhtml': strToU8(NAV),
+    'OEBPS/ch1.xhtml': strToU8(CH1),
+    'OEBPS/fonts/book.ttf': strToU8('FAKE-FONT-BYTES'),
+  });
+}
