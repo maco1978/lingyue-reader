@@ -16,3 +16,24 @@ describe('ChatPanel', () => {
     expect(html).toContain('AI 生成');
   });
 });
+describe('ChatPanel M3.1', () => {
+  const base = (
+    <ChatPanel
+      book={{ meta: { id: 'b1', title: '测试书', author: '', format: 'txt', presentation: 'reflowed' }, spine: [], toc: [] }}
+      provider={{ chat: vi.fn() }}
+      annotations={[]}
+      onJump={vi.fn()}
+    />
+  );
+
+  it('渲染「总结本章」快捷按钮', () => {
+    const html = renderToStaticMarkup(base);
+    expect(html).toContain('总结本章');
+  });
+
+  it('渲染划线问答输入框与开关', () => {
+    const html = renderToStaticMarkup(base);
+    expect(html).toContain('划线问答');
+    expect(html).toContain('粘贴划线句子（可选）');
+  });
+});

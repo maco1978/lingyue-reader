@@ -25,6 +25,8 @@ interface ChatPanelProps {
 export function ChatPanel({ book, provider, annotations, onJump, initialMessages = [], onPersist, chapterIndex = 0 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMsg[]>(initialMessages);
   const [input, setInput] = useState('');
+  const [quote, setQuote] = useState('');
+  const [quoteOpen, setQuoteOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const mountedRef = useRef(true);
@@ -33,14 +35,19 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
     return () => { mountedRef.current = false; };
   }, []);
 
-  async function send() {
-    const question = input.trim();
-    if (!question || loading) return;
+  async function send(questionOverride?: string) {
+    const text = (questionOverride ?? input).trim();
+    const q = quote.trim();
+    const question = q
+      ? '针对划线句子「' + q + '」：' + text
+      : text;
+    if (!text || loading) return;
     const history = [...messages, { role: 'user' as const, content: question }];
     setMessages(history);
     // 用户问题即时持久化：报错或中途切视图都不丢提问
     onPersist?.(history.map(({ role, content }) => ({ role, content })));
     setInput('');
+    setQuote('');
     setLoading(true);
     setError('');
     try {
@@ -89,6 +96,19 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
         ))}
         {loading && <div>思考中…</div>}
         {error && <div role="alert" style={{ color: '#b00' }}>{error}</div>}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button type="button" onClick={() => { setQuoteOpen(true); void send('请用 3-5 个要点总结当前章节'); }} disabled={loading}>总结本章</button>
+        <button type="button" onClick={() => setQuoteOpen(o => !o)} aria-expanded={quoteOpen}>划线问答</button>
+      </div>
+      <div style={{ display: quoteOpen ? 'block' : 'none' }}>
+        <input
+          aria-label="划线问答"
+          placeholder="粘贴划线句子（可选）"
+          value={quote}
+          onChange={e => setQuote(e.target.value)}
+          style={{ width: '100%', marginTop: 8 }}
+        />
       </div>
       <form
         style={{ display: 'flex', gap: 8, marginTop: 12 }}
