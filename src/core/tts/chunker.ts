@@ -8,11 +8,8 @@ export function chunkChapter(html: string, maxLen = 800): string[] {
   let buf = '';
   for (const ch of text) {
     buf += ch;
-    if (buf.length >= maxLen && /[。！？!?.;；]/.test(ch)) {
-      chunks.push(buf.trim());
-      buf = '';
-    } else if (buf.length >= maxLen) {
-      // 无标点可用时按长度硬切，保证分段推进
+    if (buf.length >= maxLen) {
+      // 按长度硬切，避免无标点超长句撑爆 buffer
       chunks.push(buf.trim());
       buf = '';
     }

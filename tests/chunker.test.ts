@@ -20,3 +20,12 @@ describe('chunkChapter', () => {
     expect(chunkChapter('', 100)).toEqual([]);
   });
 });
+
+describe('chunkChapter 硬切回退', () => {
+  it('无标点超长文本按长度硬切且不丢失内容', () => {
+    const chunks = chunkChapter('这'.repeat(30), 12);
+    expect(chunks.length).toBe(3);
+    expect(chunks.map((c) => c.length)).toEqual([12, 12, 6]);
+    expect(chunks.join('')).toBe('这'.repeat(30));
+  });
+});
