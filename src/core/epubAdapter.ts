@@ -1,6 +1,6 @@
 import { EPUB } from 'foliate-js/epub.js';
 import { makeZipSource } from './zipReader';
-import { mapFoliateBook } from './mobiAdapter';
+import { mapFoliateBook } from './foliateBook';
 import type { Book } from './types';
 
 /**

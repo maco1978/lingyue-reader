@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { mapFoliateBook, zhPreferringTextOf } from '../src/core/mobiAdapter';
+import { mapFoliateBook } from '../src/core/mobiAdapter';
+import { zhPreferringTextOf } from '../src/core/foliateBook';
 
 const fakeBook = {
   sections: [
@@ -101,5 +102,48 @@ describe('mapFoliateBook', () => {
     const book = await mapFoliateBook('b.epub', { sections: [], toc: [], metadata: {} } as any, 'epub', 'original');
     expect(book.meta.presentation).toBe('original');
     expect(book.meta.format).toBe('epub');
+  });
+
+  it('真实 MOBI/FB2 形状：section.id 是数字，绝不能崩在 stripHash', async () => {
+    const docOf = (t: string) => async () => ({ body: { innerHTML: '' }, querySelector: () => ({ textContent: t }) });
+    // mobi.js:702 / fb2.js:329 —— id 是数字序号，没有 href
+    const mobiLike = {
+      sections: [
+        { id: 0, createDocument: docOf('甲章'), linear: undefined },
+        { id: 1, createDocument: docOf('乙章'), linear: undefined },
+      ],
+      toc: [{ label: '甲章', href: '0' }, { label: '乙章', href: '1' }],
+      metadata: { title: '数字id书' },
+      resolveHref: (href: string) => ({ index: Number(href), anchor: null }),
+    };
+    const book = await mapFoliateBook('真书.azw3', mobiLike as any, 'azw3');
+    expect(book.toc.map(t => t.index)).toEqual([0, 1]);
+    expect(book.spine).toHaveLength(2);
+  });
+
+  it('async resolveHref（KF8/mobi.js:1183）：await 后仍正确解析', async () => {
+    const docOf = (t: string) => async () => ({ body: { innerHTML: '' }, querySelector: () => ({ textContent: t }) });
+    const asyncLike = {
+      sections: [
+        { id: 0, createDocument: docOf('首章'), linear: undefined },
+        { id: 1, createDocument: docOf('次章'), linear: undefined },
+      ],
+      toc: [{ label: '次章', href: 'pos:1' }, { label: '首章', href: 'pos:0' }],
+      metadata: {},
+      resolveHref: async (href: string) => {
+        const i = Number(href.split(':')[1]);
+        return i >= 0 ? { index: i, anchor: null } : null;
+      },
+    };
+    const book = await mapFoliateBook('kf8.azw3', asyncLike as any, 'azw3');
+    expect(book.toc.map(t => t.index)).toEqual([1, 0]);
+  });
+
+  it('元数据对象值非字符串（foliate contributor 数组）降级为空串，不污染 BookMeta', () => {
+    expect(zhPreferringTextOf({ zh: ['甲', '乙'] })).toBe('');
+    expect(zhPreferringTextOf(['张三'])).toBe('');
+    expect(zhPreferringTextOf({ zh: { name: '李四' } })).toBe('');
+    expect(zhPreferringTextOf('王五')).toBe('王五');
+    expect(zhPreferringTextOf({ zh: '赵六' })).toBe('赵六');
   });
 });
