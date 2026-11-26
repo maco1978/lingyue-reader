@@ -11,7 +11,13 @@ const KEY = 'lingyue:voices';
 export function voiceCards(storage: Storage) {
   function list(): VoiceCard[] {
     const raw = storage.get(KEY);
-    return raw ? JSON.parse(raw) as VoiceCard[] : [];
+    if (!raw) return [];
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as VoiceCard[]) : [];
+    } catch {
+      return [];
+    }
   }
   function save(card: VoiceCard): void {
     const all = list().filter(c => c.id !== card.id);
