@@ -140,10 +140,15 @@ describe('mapFoliateBook', () => {
   });
 
   it('元数据对象值非字符串（foliate contributor 数组）降级为空串，不污染 BookMeta', () => {
-    expect(zhPreferringTextOf({ zh: ['甲', '乙'] })).toBe('');
-    expect(zhPreferringTextOf(['张三'])).toBe('');
-    expect(zhPreferringTextOf({ zh: { name: '李四' } })).toBe('');
+    expect(zhPreferringTextOf({ zh: ['甲', '乙'] })).toBe('甲');
+    expect(zhPreferringTextOf(['张三'])).toBe('张三');
+    expect(zhPreferringTextOf({ zh: { name: '李四' } })).toBe('李四');
     expect(zhPreferringTextOf('王五')).toBe('王五');
     expect(zhPreferringTextOf({ zh: '赵六' })).toBe('赵六');
+    // 复合值合理提取，不再是空串
+    expect(zhPreferringTextOf([{ name: '甲 乙' }])).toBe('甲 乙');
+    // 纯脏对象/无字符串仍然空串
+    expect(zhPreferringTextOf({ en: { x: 42 } })).toBe('');
+    expect(zhPreferringTextOf(42)).toBe('');
   });
 });

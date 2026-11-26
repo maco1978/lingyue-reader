@@ -31,17 +31,26 @@ interface FoliateBookLike {
   resolveHref?: (href: string) => { index: number } | null | undefined | Promise<{ index: number } | null | undefined>;
 }
 
-/** foliate 的 metadata 值可能是字符串、{语言:文本} 对象或数组/对象；中文优先，非字符串一律降级空串 */
+/**
+ * foliate 的 metadata 值可能是字符串、{语言:文本} 对象、复合数组或 {name} 对象。
+ * 契约：永远返回 string。
+ * - 数组：取第一个元素递归（两个 dc:creator → 首个作者名）
+ * - 对象：优先 name 字段（递归，FB2 的 [{name:'甲 乙'}]），其次 zh/zh-CN，再取第一个字符串值
+ * - 提取不到字符串一律空串，绝不把非字符串塞进 BookMeta
+ */
 export function zhPreferringTextOf(v: unknown): string {
   if (typeof v === 'string') return v;
-  if (v && typeof v === 'object' && !Array.isArray(v)) {
+  if (Array.isArray(v)) return v.length ? zhPreferringTextOf(v[0]) : '';
+  if (v && typeof v === 'object') {
     const o = v as Record<string, unknown>;
+    if ('name' in o) return zhPreferringTextOf(o.name);
     for (const key of ['zh', 'zh-CN']) {
-      const candidate = o[key];
-      if (typeof candidate === 'string') return candidate;
+      const extracted = zhPreferringTextOf(o[key]);
+      if (extracted) return extracted;
     }
     for (const candidate of Object.values(o)) {
-      if (typeof candidate === 'string') return candidate;
+      const extracted = zhPreferringTextOf(candidate);
+      if (extracted) return extracted;
     }
   }
   return '';
