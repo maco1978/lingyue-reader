@@ -44,7 +44,7 @@ export async function openBook(fileName: string, bytes: Uint8Array): Promise<Boo
         return await buildEpubBook(fileName, bytes);
       case 'mobi':
       case 'azw3':
-        return await buildMobiBook(fileName, bytes);
+        return await buildMobiBook(fileName, bytes, format);
       case 'fb2':
         return await buildFb2Book(fileName, bytes);
       case 'pdf':

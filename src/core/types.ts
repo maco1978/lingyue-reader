@@ -18,10 +18,16 @@ export interface BookMeta {
 export interface Chapter {
   index: number;
   title: string;
-  /** 章节正文（XHTML 片段或纯文本，由呈现方式决定） */
+  /** 章节正文（XHTML 片段或纯文本，由呈现方式决定）。TTS/搜索等文本消费方只读它 */
   html: string;
   /** foliate 返回的真实 CFI 基址；重排/TXT 书没有此字段 */
   cfi?: string;
+  /**
+   * 原版呈现专用：按需取「整章文档」的 URL。格式层已把样式、图片等资源重写成 blob: URL，
+   * 渲染时放进 iframe 才能既还原版式、又不让书内 CSS 污染应用界面。
+   * 重排书没有此字段，阅读页回退到 html 片段。
+   */
+  loadDoc?: () => Promise<string | null>;
 }
 
 /**
@@ -32,6 +38,8 @@ export interface Book {
   meta: BookMeta;
   spine: Chapter[];
   toc: { title: string; index: number }[];
+  /** 释放格式层持有的资源（如原版渲染用的 blob: URL）；换书时调用 */
+  dispose?: () => void;
 }
 
 export interface BookProgress {
@@ -63,4 +71,6 @@ export interface BookState {
 export interface Storage {
   get(key: string): string | null;
   set(key: string, value: string): void;
+  /** 可选：删除一个键（从书库删除图书时清理它的阅读状态） */
+  remove?(key: string): void;
 }

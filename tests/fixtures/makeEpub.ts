@@ -38,3 +38,27 @@ export function makeObfuscatedEpub(): Uint8Array {
     'OEBPS/fonts/book.ttf': strToU8('FAKE-FONT-BYTES'),
   });
 }
+
+// ---- 带插图与外部样式的 EPUB（验证原版渲染的资源重写） ----
+
+const ILLUSTRATED_OPF = '<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>插图测试书</dc:title><dc:creator>作者乙</dc:creator><dc:identifier id="uid">test-002</dc:identifier><dc:language>zh</dc:language></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="c1" href="text/ch1.xhtml" media-type="application/xhtml+xml"/><item id="css" href="styles/main.css" media-type="text/css"/><item id="pic" href="images/pic.png" media-type="image/png"/></manifest><spine><itemref idref="c1"/></spine></package>';
+
+const ILLUSTRATED_NAV = '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol><li><a href="text/ch1.xhtml">第一章 插图</a></li></ol></nav></body></html>';
+
+// 章节在 text/ 下，样式与图片在兄弟目录：相对路径需要正确解析
+const ILLUSTRATED_CH1 = '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>插图章</title><link rel="stylesheet" type="text/css" href="../styles/main.css"/></head><body><h1>第一章 插图</h1><p>他站在门口。</p><img src="../images/pic.png" alt="插图"/></body></html>';
+
+const ILLUSTRATED_CSS = 'h1 { background: url("../images/pic.png"); }';
+
+/** 带外部样式表与图片的 EPUB：用于验证原版渲染把资源重写成 blob: URL */
+export function makeIllustratedEpub(): Uint8Array {
+  return zipSync({
+    'mimetype': strToU8('application/epub+zip'),
+    'META-INF/container.xml': strToU8(CONTAINER),
+    'OEBPS/content.opf': strToU8(ILLUSTRATED_OPF),
+    'OEBPS/nav.xhtml': strToU8(ILLUSTRATED_NAV),
+    'OEBPS/text/ch1.xhtml': strToU8(ILLUSTRATED_CH1),
+    'OEBPS/styles/main.css': strToU8(ILLUSTRATED_CSS),
+    'OEBPS/images/pic.png': strToU8('FAKE-PNG-BYTES'),
+  });
+}

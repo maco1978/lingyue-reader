@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapFoliateBook } from '../src/core/mobiAdapter';
-import { zhPreferringTextOf } from '../src/core/foliateBook';
+import { mapFoliateBook, zhPreferringTextOf } from '../src/core/foliateBook';
 
 const fakeBook = {
   sections: [
@@ -19,6 +18,25 @@ describe('mapFoliateBook', () => {
     expect(book.spine).toHaveLength(1);
     expect(book.spine[0].title).toBe('第一章');
     expect(book.spine[0].cfi).toBe('/6/2');
+  });
+
+  it('MOBI 与 AZW3 各自保留真实格式标记（不再一律标成 azw3）', async () => {
+    expect((await mapFoliateBook('book.mobi', fakeBook as any, 'mobi')).meta.format).toBe('mobi');
+    expect((await mapFoliateBook('book.azw3', fakeBook as any, 'azw3')).meta.format).toBe('azw3');
+  });
+
+  it('presentation=original 时暴露按需加载的整章文档；reflowed 时不暴露', async () => {
+    const section = () => ({
+      createDocument: async () => ({ body: { innerHTML: '<p>x</p>' }, querySelector: () => null }),
+      load: async () => 'blob:fake',
+    });
+    const original = await mapFoliateBook(
+      'b.epub', { sections: [section()], toc: [], metadata: {} } as any, 'epub', 'original');
+    expect(await original.spine[0].loadDoc?.()).toBe('blob:fake');
+
+    const reflowed = await mapFoliateBook(
+      'b.epub', { sections: [section()], toc: [], metadata: {} } as any, 'epub');
+    expect(reflowed.spine[0].loadDoc).toBeUndefined();
   });
 
   it('元数据映射：title/author/id，缺省时回退文件名', async () => {

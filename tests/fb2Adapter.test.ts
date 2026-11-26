@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapFoliateBook } from '../src/core/mobiAdapter';
+import { mapFoliateBook } from '../src/core/foliateBook';
 
 const fakeFb2 = {
   sections: [

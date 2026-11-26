@@ -46,3 +46,60 @@ describe('OpenAIProvider', () => {
     await expect(p.chat([{ role: 'user', content: 'hi' }])).rejects.toThrow(/401/);
   });
 });
+
+describe('OpenAIProvider 超时与重试', () => {
+  const ok = (content: string) => ({
+    ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }),
+  });
+
+  it('请求挂起时超时并给出人话错误', async () => {
+    const hanging = vi.fn((_url: string, init: any) => new Promise((_resolve, reject) => {
+      const abort = () => reject(new DOMException('aborted', 'AbortError'));
+      if (init?.signal?.aborted) return abort();
+      init?.signal?.addEventListener('abort', abort);
+    })) as any;
+    const p = new OpenAIProvider('sk', 'https://x', 'm', hanging, { timeoutMs: 10, retries: 0 });
+    await expect(p.chat([{ role: 'user', content: 'hi' }])).rejects.toThrow('模型调用超时');
+  });
+
+  it('503 自动重试一次后成功', async () => {
+    const fn = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => 'busy' })
+      .mockResolvedValueOnce(ok('好了')) as any;
+    const p = new OpenAIProvider('sk', 'https://x', 'm', fn, { retries: 1, retryDelayMs: 0 });
+    await expect(p.chat([{ role: 'user', content: 'hi' }])).resolves.toMatchObject({ content: '好了' });
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('429 也重试', async () => {
+    const fn = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, text: async () => 'rate limited' })
+      .mockResolvedValueOnce(ok('ok')) as any;
+    const p = new OpenAIProvider('sk', 'https://x', 'm', fn, { retries: 1, retryDelayMs: 0 });
+    await expect(p.chat([{ role: 'user', content: 'hi' }])).resolves.toMatchObject({ content: 'ok' });
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('4xx（非 429）不重试，立即报错', async () => {
+    const fn = vi.fn(async () => ({ ok: false, status: 400, text: async () => 'bad request' })) as any;
+    const p = new OpenAIProvider('sk', 'https://x', 'm', fn, { retries: 2, retryDelayMs: 0 });
+    await expect(p.chat([{ role: 'user', content: 'hi' }])).rejects.toThrow(/400/);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('网络错误（TypeError）会重试', async () => {
+    const fn = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(ok('ok')) as any;
+    const p = new OpenAIProvider('sk', 'https://x', 'm', fn, { retries: 1, retryDelayMs: 0 });
+    await expect(p.chat([{ role: 'user', content: 'hi' }])).resolves.toMatchObject({ content: 'ok' });
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('重试用尽后抛出最后一次错误', async () => {
+    const fn = vi.fn(async () => { throw new TypeError('offline'); }) as any;
+    const p = new OpenAIProvider('sk', 'https://x', 'm', fn, { retries: 1, retryDelayMs: 0 });
+    await expect(p.chat([{ role: 'user', content: 'hi' }])).rejects.toThrow('offline');
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+});

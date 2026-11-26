@@ -57,3 +57,127 @@ describe('Reader storage 注入', () => {
     expect(s.get('k')).toBe('v');
   });
 });
+
+describe('Reader 原版渲染', () => {
+  it('原版章节交给 iframe（按需加载），不把书内 HTML 直接注入应用页', () => {
+    const html = renderToStaticMarkup(
+      <Reader book={{
+        meta: { id: 'b1', title: '测试书', author: '', format: 'epub', presentation: 'original' },
+        spine: [{ index: 0, title: '第一章', html: '<img src="../images/pic.png">', loadDoc: async () => 'blob:doc' }],
+        toc: [{ title: '第一章', index: 0 }],
+      }} />
+    );
+    expect(html).toContain('正在加载原版排版');
+    expect(html).not.toContain('../images/pic.png');
+  });
+
+  it('没有 loadDoc 的章节仍走 html 片段', () => {
+    const html = renderToStaticMarkup(
+      <Reader book={{
+        meta: { id: 'b2', title: '重排书', author: '', format: 'txt', presentation: 'reflowed' },
+        spine: [{ index: 0, title: '第一章', html: '<p>正文</p>' }],
+        toc: [],
+      }} />
+    );
+    expect(html).toContain('<p>正文</p>');
+  });
+});
+
+describe('Reader 键盘与无障碍', () => {
+  const book = {
+    meta: { id: 'b1', title: '测试书', author: '', format: 'txt' as const, presentation: 'reflowed' as const },
+    spine: [
+      { index: 0, title: '第一章', html: '<p>正文一</p>' },
+      { index: 1, title: '第二章', html: '<p>正文二</p>' },
+    ],
+    toc: [{ title: '第一章', index: 0 }, { title: '第二章', index: 1 }],
+  };
+
+  it('提供跳到正文链接、目录地标与键盘翻章按钮', () => {
+    const html = renderToStaticMarkup(<Reader book={book} initialChapter={1} />);
+    expect(html).toContain('跳到正文');
+    expect(html).toContain('href="#lingyue-read-content"');
+    expect(html).toContain('id="lingyue-read-content"');
+    expect(html).toContain('aria-label="目录"');
+    expect(html).toContain('aria-keyshortcuts="Alt+ArrowLeft"');
+    expect(html).toContain('aria-keyshortcuts="Alt+ArrowRight"');
+    expect(html).toContain('上一章');
+    expect(html).toContain('下一章');
+  });
+
+  it('当前章节在目录里用 aria-current 标出', () => {
+    const html = renderToStaticMarkup(<Reader book={book} initialChapter={1} />);
+    expect(html).toContain('aria-current="true"');
+    const pos = html.indexOf('aria-current="true"');
+    expect(html.slice(pos, pos + 200)).toContain('第二章');
+  });
+
+  it('章节标题变化通过 live region 播报', () => {
+    const html = renderToStaticMarkup(<Reader book={book} initialChapter={1} />);
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('lingyue-sr-only');
+  });
+});
+
+describe('Reader 边听边看', () => {
+  const book = {
+    meta: { id: 'b1', title: '测试书', author: '', format: 'txt' as const, presentation: 'reflowed' as const },
+    spine: [{ index: 0, title: '第一章', html: '<p>正文</p>' }],
+    toc: [{ title: '第一章', index: 0 }],
+  };
+  const engine = { createVoice: async () => 'v', synthesize: async () => new Blob(['x']) };
+  const cards = [{ id: 'v1', name: '旁白', voiceId: 'voice-1', rate: 1, reference: 'upload' as const }];
+
+  it('有听书引擎时显示底部听书栏', () => {
+    const html = renderToStaticMarkup(
+      <Reader book={book} engine={engine} cards={cards} onOpenPlayer={() => {}} />
+    );
+    expect(html).toContain('边听边看');
+    expect(html).toContain('aria-label="打开播放器"');
+    expect(html).toContain('data-listen="true"');
+  });
+
+  it('没有引擎时不显示听书栏', () => {
+    const html = renderToStaticMarkup(<Reader book={book} />);
+    expect(html).not.toContain('边听边看');
+    expect(html).not.toContain('data-listen');
+  });
+});
+
+describe('Reader 阅读设置与划线', () => {
+  it('渲染字号设置与已有划线（含笔记）', () => {
+    const storage = memoryStorage();
+    const store = bookStore(storage);
+    store.addAnnotation('b1', {
+      id: 'n1', bookId: 'b1', anchor: 'epubcfi(/6/2!/4/2/1:0)', quote: '正文', note: '想法', createdAt: 1,
+    });
+
+    const html = renderToStaticMarkup(
+      <Reader
+        storage={storage}
+        book={{
+          meta: { id: 'b1', title: '测试书', author: '', format: 'txt', presentation: 'reflowed' },
+          spine: [{ index: 0, title: '第一章', html: '<p>正文</p>' }],
+          toc: [{ title: '第一章', index: 0 }],
+        }}
+      />
+    );
+    expect(html).toContain('字号');
+    expect(html).toContain('A+');
+    expect(html).toContain('划线（1）');
+    expect(html).toContain('想法');
+    expect(html).toContain('定位');
+  });
+
+  it('没有划线时给出操作提示', () => {
+    const html = renderToStaticMarkup(
+      <Reader book={{
+        meta: { id: 'b2', title: '测试书', author: '', format: 'txt', presentation: 'reflowed' },
+        spine: [{ index: 0, title: '第一章', html: '<p>正文</p>' }],
+        toc: [],
+      }} />
+    );
+    expect(html).toContain('划线（0）');
+    expect(html).toContain('选中正文即可划线');
+  });
+});

@@ -1,11 +1,15 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
+import './styles.css';
 import { Reader } from './ui/Reader';
 import { AudioPlayer } from './ui/AudioPlayer';
 import { VoiceManager } from './ui/VoiceManager';
 import { ChatPanel } from './ui/ChatPanel';
+import { Library } from './ui/Library';
 import { openBook } from './core/openBook';
+import { makeAnchor } from './core/anchors';
 import { bookStore } from './core/bookStore';
+import { library, indexedDbDriver, memoryDriver, type LibraryEntry } from './core/library';
 import { voiceCards } from './core/tts/voiceCards';
 import { MossApiEngine } from './core/tts/mossApiEngine';
 import { OpenAIProvider } from './core/agent/llmProvider';
@@ -15,6 +19,7 @@ import { collectBookData, applyBookData } from './ui/backup';
 
 const API_KEY_STORAGE = 'lingyue:moss-api-key';
 const LLM_CONFIG_STORAGE = 'lingyue:llm-config';
+const LAST_BOOK_KEY = 'lingyue:last-book';
 
 /** Hy4 Flash 默认值（OpenAI 兼容）；API Key 必须用户自填，永不硬编码 */
 const DEFAULT_LLM = { baseUrl: 'https://tokenhub.tencentmaas.com/v1', model: 'hy4-flash' };
@@ -37,6 +42,7 @@ function localStorageAdapter(): Storage {
   return {
     get: k => window.localStorage.getItem(k),
     set: (k, v) => window.localStorage.setItem(k, v),
+    remove: k => window.localStorage.removeItem(k),
   };
 }
 
@@ -46,31 +52,169 @@ const bookStoreStorage = localStorageAdapter();
 const store = bookStore(bookStoreStorage);
 const voices = voiceCards(localStorageAdapter());
 
-type View = 'reader' | 'listen' | 'voices' | 'chat';
+/** 本地书库：IndexedDB 不可用（隐私模式等）时降级为内存，本次会话仍可读，只是刷新会丢 */
+const lib = library(typeof indexedDB === 'undefined' ? memoryDriver() : indexedDbDriver());
+
+/** 章节序号一律夹到合法范围：存储里的旧进度/脏数据不会越界 */
+function clampChapter(book: Book, index: number | undefined): number {
+  return Math.max(0, Math.min(index ?? 0, book.spine.length - 1));
+}
+
+const VIEWS = [
+  { id: 'library', label: '书架' },
+  { id: 'reader', label: '阅读' },
+  { id: 'listen', label: '听书' },
+  { id: 'voices', label: '音色管理' },
+  { id: 'chat', label: '搭子' },
+] as const;
+
+type View = typeof VIEWS[number]['id'];
+
+function TopBar({ view, onView, onImport }: {
+  view: View;
+  onView: (view: View) => void;
+  onImport: (file: File) => void;
+}) {
+  return (
+    <header className="topbar">
+      <div className="brand">
+        <span className="brand-mark">聆阅</span>
+        <span className="lingyue-sr-only">看书</span>
+        <span className="brand-seal" aria-hidden="true">书</span>
+      </div>
+      <nav aria-label="主导航" className="nav">
+        {VIEWS.map(item => (
+          <button
+            key={item.id}
+            onClick={() => onView(item.id)}
+            aria-current={view === item.id ? 'page' : undefined}
+          >{item.label}</button>
+        ))}
+      </nav>
+      <div className="topbar-actions">
+        <label className="btn btn-primary lingyue-file">
+          导入图书
+          <input
+            type="file"
+            accept=".epub,.mobi,.azw3,.txt,.fb2"
+            className="lingyue-sr-only"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) onImport(f);
+              e.target.value = '';
+            }}
+          />
+        </label>
+      </div>
+    </header>
+  );
+}
 
 function App() {
   const [book, setBook] = useState<Book | null>(null);
   const [error, setError] = useState('');
-  const [view, setView] = useState<View>('reader');
+  const [view, setView] = useState<View>('library');
+  const [entries, setEntries] = useState<LibraryEntry[]>([]);
+  const [ready, setReady] = useState(false);
+  const [opening, setOpening] = useState('');
   const [apiKey, setApiKey] = useState(() => window.localStorage.getItem(API_KEY_STORAGE) ?? '');
   const [keyDraft, setKeyDraft] = useState('');
   const [cards, setCards] = useState<VoiceCard[]>(() => voices.list());
   const [llm, setLlm] = useState<LlmConfig>(loadLlmConfig);
   const [llmKeyDraft, setLlmKeyDraft] = useState('');
-  const [chatChapter, setChatChapter] = useState(0);
 
-  /** 导入真实电子书：File → bytes → openBook（格式分诊） */
+  // 换书时释放旧书持有的 blob: 资源（原版渲染的样式/图片缓存）
+  useEffect(() => () => { book?.dispose?.(); }, [book]);
+
+  /** 从本地书库打开：取原始文件 → 重新解析 → 记为最近读的一本 */
+  const openById = useCallback(async (id: string) => {
+    setOpening(id);
+    setError('');
+    try {
+      const found = await lib.open(id);
+      if (!found) {
+        setError('这本书已不在本地书库，可能已被删除');
+        return;
+      }
+      const loaded = await openBook(found.fileName, found.bytes);
+      setBook(loaded);
+      setView('reader');
+      window.localStorage.setItem(LAST_BOOK_KEY, loaded.meta.id);
+      await lib.touch(id);
+      setEntries(await lib.list());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOpening('');
+    }
+  }, []);
+
+  // 启动时读书架，并自动接着上次读的那本；书已被删除就停在书架
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      let list: LibraryEntry[] = [];
+      try {
+        list = await lib.list();
+      } catch (e) {
+        console.warn('读取本地书库失败：', e);
+      }
+      if (!alive) return;
+      setEntries(list);
+      setReady(true);
+      const lastId = window.localStorage.getItem(LAST_BOOK_KEY);
+      if (lastId && list.some(entry => entry.id === lastId)) void openById(lastId);
+    })();
+    return () => { alive = false; };
+  }, [openById]);
+
+  /** 导入真实电子书：File → bytes → openBook，成功后再尽力入库 */
   const handleImportBook = useCallback(async (file: File) => {
     setError('');
+    setOpening('import');
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
       const loaded = await openBook(file.name, buf);
+      // 先开书再入库：即使书库写不进去，本次阅读也不受影响
       setBook(loaded);
       setView('reader');
+      window.localStorage.setItem(LAST_BOOK_KEY, loaded.meta.id);
+      try {
+        await lib.save({
+          fileName: file.name,
+          bytes: buf,
+          meta: loaded.meta,
+          chapterCount: loaded.spine.length,
+        });
+        setEntries(await lib.list());
+      } catch (e) {
+        alert(e instanceof Error ? e.message : String(e));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOpening('');
     }
   }, []);
+
+  /** 从书架删除：图书文件与阅读状态一并清掉 */
+  const handleRemoveBook = useCallback(async (id: string) => {
+    const entry = entries.find(e => e.id === id);
+    if (!entry) return;
+    if (!window.confirm('从书架删除《' + entry.meta.title + '》？阅读进度与聊天记录也会一并删除。')) return;
+    try {
+      await lib.remove(id);
+      store.removeState(id);
+      if (book?.meta.id === id) {
+        setBook(null);
+        setView('library');
+      }
+      if (window.localStorage.getItem(LAST_BOOK_KEY) === id) window.localStorage.removeItem(LAST_BOOK_KEY);
+      setEntries(await lib.list());
+    } catch (e) {
+      alert('删除失败：' + (e instanceof Error ? e.message : String(e)));
+    }
+  }, [entries, book]);
 
   const saveApiKey = useCallback(() => {
     const trimmed = keyDraft.trim();
@@ -89,7 +233,7 @@ function App() {
     setLlmKeyDraft('');
   }, [llmKeyDraft, llm]);
 
-  const engine = apiKey ? new MossApiEngine(apiKey) : null;
+  const engine = useMemo(() => (apiKey ? new MossApiEngine(apiKey) : null), [apiKey]);
   const provider = useMemo(
     () => (llm.apiKey ? new OpenAIProvider(llm.apiKey, llm.baseUrl, llm.model) : null),
     [llm.apiKey, llm.baseUrl, llm.model],
@@ -107,11 +251,13 @@ function App() {
   const handleBackupExport = useCallback(() => {
     const entries = Object.keys(window.localStorage).map(k => [k, window.localStorage.getItem(k)!] as [string, string]);
     const blob = new Blob([JSON.stringify(collectBookData(Object.fromEntries(entries)), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = 'lingyue-backup.json';
     a.click();
-    URL.revokeObjectURL(a.href);
+    // 不能在 click() 后同步回收：部分浏览器还没开始读取 blob，下载会被取消
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }, []);
 
   const handleBackupImport = useCallback(async (file: File) => {
@@ -125,129 +271,162 @@ function App() {
   }, []);
 
   const handleJump = useCallback((chapterIndex: number) => {
-    setChatChapter(chapterIndex);
+    if (!book) return;
+    // 跳转即移动阅读位置：写回 progress，让阅读页与搭子上下文共用同一个来源
+    try {
+      store.saveProgress(book.meta.id, {
+        bookId: book.meta.id,
+        chapterIndex,
+        anchor: makeAnchor(chapterIndex, 0),
+        updatedAt: Date.now(),
+      });
+    } catch (e) {
+      console.warn('阅读进度保存失败：', e);
+    }
     setView('reader');
-  }, []);
+  }, [book]);
+
+  const handleAudioPosition = useCallback((pos: { chapterIndex: number; anchor: string }) => {
+    if (!book) return;
+    try {
+      store.saveState(book.meta.id, { ...store.loadState(book.meta.id), audioPosition: pos });
+    } catch (e) {
+      console.warn('听书位置保存失败：', e);
+    }
+  }, [book]);
 
   const handlePersistChat = useCallback((messages: { role: 'user' | 'assistant'; content: string }[]) => {
     if (!book) return;
-    store.saveState(book.meta.id, { ...store.loadState(book.meta.id), chatHistory: messages });
+    // 聊天史只是附属数据：存储写满时不能把整轮对话一起弄挂
+    try {
+      store.saveState(book.meta.id, { ...store.loadState(book.meta.id), chatHistory: messages });
+    } catch (e) {
+      console.warn('聊天记录保存失败：', e);
+    }
   }, [book]);
 
-  if (!book) return (
-    <div style={{ fontFamily: 'system-ui', maxWidth: 520, margin: '60px auto', padding: 16, textAlign: 'center' }}>
-      <h2>聆阅看书</h2>
-      <p>导入一本电子书开始阅读（支持 EPUB / MOBI / AZW3 / TXT / FB2）</p>
-      <label style={{ display: 'inline-block', padding: '10px 20px', background: '#4a90d9', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-        导入图书
-        <input
-          type="file"
-          accept=".epub,.mobi,.azw3,.txt,.fb2,.pdf"
-          style={{ display: 'none' }}
-          onChange={e => { const f = e.target.files?.[0]; if (f) void handleImportBook(f); e.target.value = ''; }}
-        />
-      </label>
-      {error && <div role="alert" style={{ color: '#c00', marginTop: 16 }}>{error}</div>}
-    </div>
+  const shelf = (
+    <Library
+      entries={entries}
+      currentId={book?.meta.id}
+      progressOf={id => store.loadState(id).progress?.chapterIndex}
+      busyId={opening}
+      onOpen={id => { void openById(id); }}
+      onRemove={id => { void handleRemoveBook(id); }}
+      onImport={file => { void handleImportBook(file); }}
+      onExportBackup={handleBackupExport}
+      onImportBackup={file => { void handleBackupImport(file); }}
+    />
   );
-  if (error) return <div role="alert">{error}</div>;
 
-  const chatHistory = store.loadState(book.meta.id).chatHistory;
+  const errorBanner = error ? (
+    <div role="alert" className="notice notice-danger">
+      {error}
+      {' '}
+      <button onClick={() => setError('')}>关闭</button>
+    </div>
+  ) : null;
+
+  if (!book) {
+    return (
+      <div className="app">
+        <TopBar view="library" onView={setView} onImport={file => { void handleImportBook(file); }} />
+        {errorBanner}
+        <main className="app-main">
+          {ready ? shelf : <p className="loading">正在读取书架…</p>}
+        </main>
+      </div>
+    );
+  }
+
+  // 书级状态一次读出：进度/划线/听书位置/聊天史同源，避免每次渲染反复 JSON.parse
+  const state = store.loadState(book.meta.id);
+  const readingChapter = clampChapter(book, state.progress?.chapterIndex);
+  const listeningChapter = clampChapter(book, state.audioPosition?.chapterIndex);
+
+  // 阅读页是整屏接管：自己的顶栏、无应用导航，把空间全部留给正文
+  if (view === 'reader') {
+    return (
+      <Reader
+        key={book.meta.id}
+        book={book}
+        initialChapter={readingChapter}
+        storage={bookStoreStorage}
+        onBack={() => setView('library')}
+        engine={engine}
+        cards={cards}
+        onOpenPlayer={() => setView('listen')}
+      />
+    );
+  }
 
   return (
-    <div style={{ fontFamily: 'system-ui' }}>
-      <nav style={{ display: 'flex', gap: 8, padding: 8, borderBottom: '1px solid #ddd' }}>
-        <button onClick={() => setView('reader')}>阅读</button>
-        <button onClick={() => setView('listen')}>听书</button>
-        <button onClick={() => setView('voices')}>音色管理</button>
-        <button onClick={() => setView('chat')}>搭子</button>
-        <label style={{ cursor: 'pointer' }}>
-          导入图书
-          <input
-            type="file"
-            accept=".epub,.mobi,.azw3,.txt,.fb2,.pdf"
-            style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) void handleImportBook(f); e.target.value = ''; }}
-          />
-        </label>
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button onClick={handleBackupExport}>备份导出</button>
-          <label style={{ cursor: 'pointer' }}>
-            备份导入
-            <input
-              type="file"
-              accept="application/json"
-              style={{ display: 'none' }}
-              onChange={e => {
-                const f = e.target.files?.[0];
-                if (f) void handleBackupImport(f);
-                e.target.value = '';
-              }}
-            />
-          </label>
-        </span>
-      </nav>
+    <div className="app">
+      <TopBar view={view} onView={setView} onImport={file => { void handleImportBook(file); }} />
+      {errorBanner}
       {!apiKey && (
-        <div style={{ padding: 8, background: '#fff8e1' }}>
-          听书需要 MOSS API Key（存储于浏览器 localStorage，密钥名 {API_KEY_STORAGE}）：
-          <input
-            type="password"
-            placeholder="粘贴 API Key"
-            value={keyDraft}
-            onChange={e => setKeyDraft(e.target.value)}
-          />
-          <button onClick={saveApiKey}>保存</button>
-        </div>
-      )}
-      {view === 'reader' && <Reader book={book} initialChapter={chatChapter} storage={bookStoreStorage} />}
-      {view === 'listen' && engine && (
-        <AudioPlayer
-          book={book}
-          engine={engine}
-          cards={cards}
-          initialChapter={Math.max(0, Math.min(
-            store.loadState(book.meta.id).audioPosition?.chapterIndex ?? 0,
-            book.spine.length - 1,
-          ))}
-          onPosition={pos => store.saveState(book.meta.id, {
-            ...store.loadState(book.meta.id),
-            audioPosition: pos,
-          })}
-        />
-      )}
-      {view === 'listen' && !engine && <div>请先配置 API Key</div>}
-      {view === 'voices' && engine && (
-        <VoiceManager engine={engine} cards={cards} onSave={handleSaveCard} onRemove={handleRemoveCard} />
-      )}
-      {view === 'voices' && !engine && <div>请先配置 API Key</div>}
-      {view === 'chat' && provider && (
-        // 搭子上下文跟随最新阅读进度（Reader goTo 写入共享 storage），而非仅 onJump 时的快照；
-        // 与 Reader.initialChapter 冲突时以 progress 为准
-        <ChatPanel
-          book={book}
-          provider={provider}
-          annotations={store.loadState(book.meta.id).annotations}
-          onJump={handleJump}
-          initialMessages={chatHistory}
-          onPersist={handlePersistChat}
-          chapterIndex={Math.max(0, Math.min(store.loadState(book.meta.id).progress?.chapterIndex ?? 0, book.spine.length - 1))}
-        />
-      )}
-      {view === 'chat' && !provider && (
-        <div style={{ padding: 8, maxWidth: 480, margin: '0 auto' }}>
-          <h3>读书搭子</h3>
-          <p>搭子需要大模型 API Key（OpenAI 兼容接口）。默认使用腾讯混元 Hy4 Flash（{DEFAULT_LLM.baseUrl} / {DEFAULT_LLM.model}），可在 localStorage「{LLM_CONFIG_STORAGE}」中改 base_url 与 model（如 DeepSeek）。</p>
-          <p>
+        <div className="notice">
+          <span className="notice-inline">
+            听书需要 MOSS API Key（只存在本机浏览器）：
             <input
               type="password"
-              placeholder="粘贴 LLM API Key"
-              value={llmKeyDraft}
-              onChange={e => setLlmKeyDraft(e.target.value)}
+              placeholder="粘贴 API Key"
+              value={keyDraft}
+              onChange={e => setKeyDraft(e.target.value)}
             />
-            <button onClick={saveLlmKey}>保存</button>
-          </p>
+            <button onClick={saveApiKey}>保存</button>
+          </span>
         </div>
       )}
+
+      <main className="app-main">
+        {view === 'library' && shelf}
+        {view === 'listen' && engine && (
+          <AudioPlayer
+            key={book.meta.id}
+            book={book}
+            engine={engine}
+            cards={cards}
+            initialChapter={listeningChapter}
+            onPosition={handleAudioPosition}
+          />
+        )}
+        {view === 'listen' && !engine && <p className="loading">请先配置 MOSS API Key</p>}
+        {view === 'voices' && engine && (
+          <VoiceManager engine={engine} cards={cards} onSave={handleSaveCard} onRemove={handleRemoveCard} />
+        )}
+        {view === 'voices' && !engine && <p className="loading">请先配置 MOSS API Key</p>}
+        {view === 'chat' && provider && (
+          // 搭子上下文与阅读页共用 progress 这一个来源：Reader 每次翻页都写回 storage
+          <ChatPanel
+            key={book.meta.id}
+            book={book}
+            provider={provider}
+            annotations={state.annotations}
+            onJump={handleJump}
+            initialMessages={state.chatHistory}
+            onPersist={handlePersistChat}
+            chapterIndex={readingChapter}
+          />
+        )}
+        {view === 'chat' && !provider && (
+          <section className="chat-key">
+            <h1>读书搭子</h1>
+            <p>搭子使用 OpenAI 兼容接口。默认是腾讯混元 Hy4 Flash（{DEFAULT_LLM.baseUrl} / {DEFAULT_LLM.model}），
+              也可以在 localStorage 的「{LLM_CONFIG_STORAGE}」里改成 DeepSeek 等任意兼容端点。</p>
+            <div className="chat-key-form">
+              <input
+                type="password"
+                placeholder="粘贴 LLM API Key"
+                aria-label="LLM API Key"
+                value={llmKeyDraft}
+                onChange={e => setLlmKeyDraft(e.target.value)}
+              />
+              <button className="btn btn-primary" onClick={saveLlmKey}>保存</button>
+            </div>
+          </section>
+        )}
+      </main>
     </div>
   );
 }

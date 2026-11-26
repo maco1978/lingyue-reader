@@ -84,4 +84,27 @@ describe('MossApiEngine', () => {
     const engine = new MossApiEngine('sk-test', fn as any);
     await expect(engine.createVoice(new Blob(['x']), 'x')).rejects.toThrow();
   });
+
+  it('合成超时给出人话错误，不会无限等待', async () => {
+    const hanging = vi.fn((_url: string, init: any) => new Promise((_resolve, reject) => {
+      const abort = () => reject(new DOMException('aborted', 'AbortError'));
+      if (init?.signal?.aborted) { abort(); return; }
+      init?.signal?.addEventListener('abort', abort);
+    }));
+    const engine = new MossApiEngine('sk-test', hanging as any, 'https://x', 'm', 10);
+    await expect(engine.synthesize({ text: '一二三', voiceId: 'v' })).rejects.toThrow('语音合成超时');
+  });
+
+  it('调用方主动取消时不误报超时', async () => {
+    const hanging = vi.fn((_url: string, init: any) => new Promise((_resolve, reject) => {
+      const abort = () => reject(new DOMException('aborted', 'AbortError'));
+      if (init?.signal?.aborted) { abort(); return; }
+      init?.signal?.addEventListener('abort', abort);
+    }));
+    const engine = new MossApiEngine('sk-test', hanging as any, 'https://x', 'm', 10_000);
+    const controller = new AbortController();
+    const pending = engine.synthesize({ text: 'x', voiceId: 'v', signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toThrow(/abort/i);
+  });
 });

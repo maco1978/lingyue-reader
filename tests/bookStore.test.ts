@@ -27,4 +27,39 @@ describe('bookStore', () => {
     expect(state.annotations).toHaveLength(1);
     expect(state.progress?.anchor).toBe('a1');
   });
+
+  it('存储内容损坏时自愈：不抛错，按空状态继续', () => {
+    const storage = memoryStorage();
+    storage.set('lingyue:state:book-1', '{bad json');
+    expect(bookStore(storage).loadState('book-1')).toEqual({ annotations: [], chatHistory: [] });
+
+    storage.set('lingyue:state:book-1', 'null');
+    expect(bookStore(storage).loadState('book-1')).toEqual({ annotations: [], chatHistory: [] });
+  });
+
+  it('字段类型不对时退回安全默认值，合法字段保留', () => {
+    const storage = memoryStorage();
+    storage.set('lingyue:state:book-1', JSON.stringify({
+      annotations: '不是数组', chatHistory: { a: 1 }, progress: { chapterIndex: 2 },
+    }));
+    const state = bookStore(storage).loadState('book-1');
+    expect(state.annotations).toEqual([]);
+    expect(state.chatHistory).toEqual([]);
+    expect(state.progress?.chapterIndex).toBe(2);
+  });
+
+  it('写入超配额时抛人话错误并保留 cause', () => {
+    const storage = {
+      get: () => null,
+      set: () => { throw new Error('QuotaExceededError'); },
+    };
+    let err: (Error & { cause?: unknown }) | undefined;
+    try {
+      bookStore(storage).saveState('book-1', { annotations: [], chatHistory: [] });
+    } catch (e) {
+      err = e as Error & { cause?: unknown };
+    }
+    expect(err?.message).toContain('本地存储已满');
+    expect(err?.cause).toBeInstanceOf(Error);
+  });
 });

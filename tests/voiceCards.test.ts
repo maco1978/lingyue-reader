@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { voiceCards, memoryStorage } from '../src/core/tts/voiceCards';
+import { voiceCards } from '../src/core/tts/voiceCards';
+import { memoryStorage } from '../src/core/bookStore';
 
 describe('voiceCards', () => {
   it('新库为空', () => {

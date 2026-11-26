@@ -35,6 +35,15 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
     return () => { mountedRef.current = false; };
   }, []);
 
+  /** 聊天史是附属数据：存储写满时不阻塞对话本身 */
+  function persist(msgs: ChatMsg[]) {
+    try {
+      onPersist?.(msgs.map(({ role, content }) => ({ role, content })));
+    } catch {
+      // 落盘失败不影响本轮问答
+    }
+  }
+
   async function send(questionOverride?: string) {
     const text = (questionOverride ?? input).trim();
     const q = questionOverride ? '' : quote.trim();
@@ -45,7 +54,7 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
     const history = [...messages, { role: 'user' as const, content: question }];
     setMessages(history);
     // 用户问题即时持久化：报错或中途切视图都不丢提问
-    onPersist?.(history.map(({ role, content }) => ({ role, content })));
+    persist(history);
     setInput('');
     setQuote('');
     setLoading(true);
@@ -66,7 +75,7 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
         { role: 'assistant', content: reply, sourceChapter: output.sourceChapter },
       ];
       setMessages(next);
-      onPersist?.(next.map(({ role, content }) => ({ role, content })));
+      persist(next);
     } catch (e) {
       if (!mountedRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
@@ -77,41 +86,50 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', fontFamily: 'system-ui' }}>
-      <h3>读书搭子</h3>
-      <p><small>和《{book.meta.title}》的 AI 伙伴聊聊这本书（AI 生成内容仅供参考）</small></p>
-      <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 120 }}>
+    <section className="chat" aria-labelledby="chat-title">
+      <header className="chat-head">
+        <h1 id="chat-title">读书搭子</h1>
+        <p>和《{book.meta.title}》的 AI 伙伴聊聊这本书（AI 生成内容仅供参考）</p>
+      </header>
+
+      <div className="chat-log" aria-live="polite">
+        {messages.length === 0 && !loading && (
+          <p className="chat-empty">可以问情节、理人物关系，或者选中一段话问出处。</p>
+        )}
         {messages.map((m, i) => (
-          <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', background: m.role === 'user' ? '#e3f2fd' : '#f1f1f1', padding: 8, borderRadius: 8, maxWidth: '80%' }}>
-            <div>{m.content}</div>
-            {m.role === 'assistant' && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <small>AI 生成</small>
+          m.role === 'user' ? (
+            <div key={i} className="msg msg-user">{m.content}</div>
+          ) : (
+            <div key={i} className="msg msg-ai">
+              <div className="bubble">{m.content}</div>
+              <div className="msg-meta">
+                <span>AI 生成</span>
                 {m.sourceChapter !== undefined && (
                   <button onClick={() => onJump(m.sourceChapter!)}>查看原文</button>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )
         ))}
-        {loading && <div>思考中…</div>}
-        {error && <div role="alert" style={{ color: '#b00' }}>{error}</div>}
+        {loading && <p className="chat-loading">思考中…</p>}
+        {error && <p role="alert" className="chat-error">{error}</p>}
       </div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+
+      <div className="chat-tools">
         <button type="button" onClick={() => { void send('请用 3-5 个要点总结当前章节'); }} disabled={loading}>总结本章</button>
         <button type="button" onClick={() => setQuoteOpen(o => !o)} aria-expanded={quoteOpen}>划线问答</button>
       </div>
-      <div style={{ display: quoteOpen ? 'block' : 'none' }}>
+      <div className="chat-quote" hidden={!quoteOpen}>
         <input
           aria-label="划线问答"
           placeholder="粘贴划线句子（可选）"
           value={quote}
           onChange={e => setQuote(e.target.value)}
-          style={{ width: '100%', marginTop: 8 }}
         />
       </div>
+
       <form
-        style={{ display: 'flex', gap: 8, marginTop: 12 }}
+        className="composer"
         onSubmit={e => { e.preventDefault(); void send(); }}
       >
         <input
@@ -122,6 +140,6 @@ export function ChatPanel({ book, provider, annotations, onJump, initialMessages
         />
         <button type="submit" disabled={loading || !input.trim()}>发送</button>
       </form>
-    </div>
+    </section>
   );
 }

@@ -1,11 +1,6 @@
 import type { VoiceCard } from './types';
 import type { Storage } from '../types';
 
-export function memoryStorage(): Storage {
-  const map = new Map<string, string>();
-  return { get: k => map.get(k) ?? null, set: (k, v) => { map.set(k, v); } };
-}
-
 const KEY = 'lingyue:voices';
 
 export function voiceCards(storage: Storage) {

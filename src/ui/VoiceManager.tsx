@@ -29,22 +29,41 @@ export function VoiceManager({ engine, cards, onSave, onRemove }: Props) {
   }
 
   return (
-    <div style={{ fontFamily: 'system-ui', maxWidth: 720 }}>
-      <h2>音色管理</h2>
-      <div>
-        <input type="file" accept="audio/*" onChange={e => setFile(e.target.files?.[0] ?? null)} />
-        <input placeholder="音色名称" value={name} onChange={e => setName(e.target.value)} />
-        <button onClick={() => void create()}>创建音色</button>
-        <span style={{ marginLeft: 8 }}>{status}</span>
+    <section className="voices" aria-labelledby="voices-title">
+      <h1 id="voices-title">音色管理</h1>
+      <p className="voices-lead">上传一段参考音频，就能用这个声音朗读整本书。</p>
+
+      <div className="voice-create">
+        <input
+          type="file"
+          accept="audio/*"
+          className="lingyue-file"
+          onChange={e => setFile(e.target.files?.[0] ?? null)}
+        />
+        <input
+          type="text"
+          placeholder="音色名称"
+          aria-label="音色名称"
+          value={name}
+          onChange={e => setName(e.target.value)}
+        />
+        <button className="btn btn-primary" onClick={() => void create()}>创建音色</button>
       </div>
-      <ul>
-        {cards.map(c => (
-          <li key={c.id}>
-            {c.name}（rate={c.rate}，{c.reference}）
-            <button onClick={() => onRemove(c.id)} style={{ marginLeft: 8 }}>删除</button>
-          </li>
-        ))}
-      </ul>
-    </div>
+      <span className="voice-status" role="status">{status}</span>
+
+      {cards.length === 0 ? (
+        <p className="voice-empty">还没有音色。创建后，听书时就能在音色列表里选到它。</p>
+      ) : (
+        <ul className="voice-list">
+          {cards.map(c => (
+            <li key={c.id} className="voice-row">
+              <span className="voice-name">{c.name}</span>
+              <span className="voice-meta">{c.reference === 'upload' ? '参考音频' : '文字设计'} · 语速 {c.rate}</span>
+              <button onClick={() => onRemove(c.id)} aria-label={'删除音色：' + c.name}>删除</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

@@ -8,6 +8,11 @@ import type { Book, Chapter, BookFormat, Presentation } from './types';
 
 interface FoliateSection {
   createDocument(): Promise<Document> | Document;
+  /**
+   * 原版呈现用：foliate 的 Loader 会把该章的样式/图片/字体重写成 blob: URL，
+   * 返回整章文档的 URL（EPUB 有；MOBI/FB2 走重排，不使用）。
+   */
+  load?: () => Promise<string | null>;
   linear?: string;
   cfi?: string;
   /**
@@ -29,6 +34,8 @@ interface FoliateBookLike {
    * 返回原始 spine 序号（含 linear=no），可能为 null/undefined。
    */
   resolveHref?: (href: string) => { index: number } | null | undefined | Promise<{ index: number } | null | undefined>;
+  /** 释放 foliate 持有的 blob: URL（换书时调用） */
+  destroy?: () => void;
 }
 
 /**
@@ -129,14 +136,21 @@ export async function mapFoliateBook(
   for (const section of raw.sections) {
     if (section.linear === 'no') continue;
     const doc = await section.createDocument() as any;
-    spine.push({
+    const chapter: Chapter = {
       index: spine.length,
       title: doc.querySelector?.('h1, h2, title')?.textContent?.trim() || '第 ' + (spine.length + 1) + ' 章',
       html: doc.body?.innerHTML ?? '',
       cfi: section.cfi,
-    });
+    };
+    // 原版呈现：整章文档交给 foliate 的 Loader 按需重写资源（样式/图片→blob:），
+    // 由阅读页放进 iframe 渲染；html 片段仍供 TTS/搜索使用。
+    if (presentation === 'original' && typeof section.load === 'function') {
+      const load = section.load.bind(section);
+      chapter.loadDoc = () => load();
+    }
+    spine.push(chapter);
   }
-  return {
+  const book: Book = {
     meta: {
       id: fileName + ':' + (zhPreferringTextOf(raw.metadata.identifier) || format),
       title: zhPreferringTextOf(raw.metadata.title) || fileName.replace(/\.[^.]+$/, ''),
@@ -147,4 +161,9 @@ export async function mapFoliateBook(
     spine,
     toc: await buildToc(raw, raw.sections, spine),
   };
+  if (typeof raw.destroy === 'function') {
+    const destroy = raw.destroy.bind(raw);
+    book.dispose = () => destroy();
+  }
+  return book;
 }

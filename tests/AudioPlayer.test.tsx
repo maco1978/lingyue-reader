@@ -40,6 +40,20 @@ describe('AudioPlayer', () => {
     }
   });
 
+  it('有音色时下拉框与标签关联，状态区域可被播报', () => {
+    const html = renderToStaticMarkup(
+      <AudioPlayer
+        book={{ meta: { id: 'b1', title: '测试书', author: '', format: 'txt', presentation: 'reflowed' }, spine: [{ index: 0, title: '第一章', html: '正文' }], toc: [] }}
+        engine={{ createVoice: vi.fn(), synthesize: vi.fn() }}
+        cards={[{ id: 'v1', name: '旁白', voiceId: 'voice-1', rate: 1, reference: 'upload' }]}
+        onPosition={vi.fn()}
+      />
+    );
+    expect(html).toContain('for="lingyue-voice-select"');
+    expect(html).toContain('id="lingyue-voice-select"');
+    expect(html).toContain('role="status"');
+  });
+
   it('initialChapter 用于初始化当前章节（断点续听）', () => {
     const book = {
       meta: { id: 'b1', title: '测试书', author: '', format: 'txt' as const, presentation: 'reflowed' as const },
@@ -58,15 +72,13 @@ describe('AudioPlayer', () => {
         initialChapter={1}
       />
     );
-    // aria-current 应落在第二章按钮的开标签上（其文本「第二章」紧随其后），而非默认的第 0 章
+    // aria-current 应落在第二章按钮上（播放器标题区也会出现章节名，所以按按钮边界定位）
     expect(html).toContain('aria-current="true"');
     const currentPos = html.indexOf('aria-current="true"');
-    const markPos = html.indexOf('第二章', currentPos);
-    // aria-current 之后最近的一个「第二章」必须是该按钮自身的文本（同标签内），且第一章按钮不含 aria-current
-    expect(markPos).toBeGreaterThan(-1);
-    expect(html.slice(0, currentPos)).not.toContain('第二章');
-    expect(html.slice(0, currentPos)).toContain('第一章');
-    // aria-current 与「第二章」在同一个开标签内（中间不得出现闭合标签）
-    expect(html.slice(currentPos, markPos)).not.toContain('</button>');
+    const buttonStart = html.lastIndexOf('<button', currentPos);
+    const buttonEnd = html.indexOf('</button>', currentPos);
+    const currentButton = html.slice(buttonStart, buttonEnd);
+    expect(currentButton).toContain('第二章');
+    expect(currentButton).not.toContain('第一章');
   });
 });
